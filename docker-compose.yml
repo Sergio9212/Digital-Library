@@ -1,0 +1,51 @@
+version: '3.9'
+
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: sqldata
+    environment:
+      - ACCEPT_EULA=Y
+      - SA_PASSWORD=YourPassword123!
+      - MSSQL_PID=Developer
+    ports:
+      - "1433:1433"
+    volumes:
+      - sql_data:/var/opt/mssql
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/localhost/1433' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  webapi:
+    build: ./DigitalLibrary.API
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    ports:
+      - "5000:8080"
+    environment:
+      - ConnectionStrings__DefaultConnection=Server=sqlserver;Database=DigitalLibraryDb;User Id=sa;Password=YourPassword123!;TrustServerCertificate=True;
+    networks:
+      - app_network
+
+  frontend:
+    build: ./DigitalLibrary.Frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - webapi
+    environment:
+      - VITE_API_URL=http://localhost:5000
+    networks:
+      - app_network
+
+networks:
+  app_network:
+
+volumes:
+  sql_data:
