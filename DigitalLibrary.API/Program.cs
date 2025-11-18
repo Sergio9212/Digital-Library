@@ -1,5 +1,9 @@
 using Microsoft.OpenApi.Models;
 using DigitalLibrary.API.Data;
+using DigitalLibrary.API.GraphQL.Mutations;
+using DigitalLibrary.API.GraphQL.Queries;
+using DigitalLibrary.API.GraphQL.Services;
+using DigitalLibrary.API.Models.Configuration;
 using DigitalLibrary.API.Services;
 using DigitalLibrary.API.Repositories;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -46,6 +50,17 @@ builder.Services.AddScoped<IBookRepository, BookRepository>();
 // Register services
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IBookService, BookService>();
+
+// MongoDB + GraphQL configuration
+builder.Services.Configure<MongoSettings>(builder.Configuration.GetSection("MongoSettings"));
+builder.Services.AddSingleton<IMongoBookService, MongoBookService>();
+builder.Services.AddHttpContextAccessor();
+
+builder.Services
+    .AddGraphQLServer()
+    .AddAuthorization()
+    .AddQueryType<BookQueries>()
+    .AddMutationType<BookMutations>();
 
 // Configure Swagger/OpenAPI
 builder.Services.AddEndpointsApiExplorer();
@@ -102,7 +117,7 @@ Esta API proporciona funcionalidades completas para la gestión de una bibliotec
     
     // Include XML comments
     var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
-    var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+    var xmlPath = System.IO.Path.Combine(AppContext.BaseDirectory, xmlFile);
     if (File.Exists(xmlPath))
     {
         c.IncludeXmlComments(xmlPath);
@@ -197,6 +212,178 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapGraphQL("/graphql").RequireAuthorization();
+
+// Panel minimalista para probar GraphQL sin dependencias externas
+app.MapGet("/graphql-ui", async context =>
+{
+    const string html = """
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>Digital Library GraphQL Console</title>
+    <link rel="icon" href="data:," />
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Segoe UI", Arial, sans-serif;
+        background: #0f172a;
+        color: #e2e8f0;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+      header {
+        padding: 16px 32px;
+        background: #1e293b;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+      }
+      main {
+        padding: 24px 32px;
+        flex: 1;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 24px;
+      }
+      section {
+        background: #1e293b;
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 16px;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      textarea, input {
+        width: 100%;
+        background: #0f172a;
+        color: #e2e8f0;
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 10px;
+        padding: 10px;
+        font-size: 14px;
+        font-family: "Fira Code", Consolas, monospace;
+      }
+      textarea { min-height: 180px; resize: vertical; }
+      label { font-size: 13px; font-weight: 600; color: #94a3b8; }
+      button {
+        background: linear-gradient(135deg, #6366f1, #8b5cf6);
+        color: white;
+        border: none;
+        border-radius: 10px;
+        padding: 12px 20px;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        margin-top: 8px;
+      }
+      pre {
+        background: #0f172a;
+        border-radius: 12px;
+        padding: 16px;
+        overflow: auto;
+        font-size: 13px;
+      }
+      .status {
+        font-size: 12px;
+        color: #38bdf8;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 style="margin:0;font-size:22px;">📚 GraphQL Console</h1>
+      <p style="margin:4px 0 0;font-size:14px;color:#94a3b8;">
+        Ejecuta consultas/mutaciones contra <code>/graphql</code>. Coloca tu token JWT abajo.
+      </p>
+    </header>
+    <main>
+      <section>
+        <label for="token">Token JWT (sin "Bearer")</label>
+        <input id="token" placeholder="eyJhbGciOiJIUzI1NiIsIn..." />
+
+        <label for="query">Query / Mutation</label>
+        <textarea id="query">query MyBooks {
+  myBooks {
+    id
+    title
+    author
+    rating
+  }
+}</textarea>
+
+        <label for="variables">Variables (opcional)</label>
+        <textarea id="variables" placeholder='{"id": "..." }'></textarea>
+
+        <button id="execute">Ejecutar</button>
+        <span class="status" id="status"></span>
+      </section>
+
+      <section>
+        <label>Respuesta</label>
+        <pre id="response">Pulsa "Ejecutar" para ver la salida aquí.</pre>
+      </section>
+    </main>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const button = $("execute");
+      const status = $("status");
+
+      // Intenta recuperar token guardado por la SPA
+      const storedToken = localStorage.getItem("token");
+      if (storedToken && !$("token").value) {
+        $("token").value = storedToken;
+      }
+
+      button.addEventListener("click", async () => {
+        status.textContent = "Enviando...";
+        const token = $("token").value.trim();
+        const query = $("query").value;
+        const variablesText = $("variables").value;
+
+        let variables = undefined;
+        if (variablesText) {
+          try {
+            variables = JSON.parse(variablesText);
+          } catch (error) {
+            $("response").textContent = "❌ Variables inválidas: " + error;
+            status.textContent = "";
+            return;
+          }
+        }
+
+        const headers = {
+          "Content-Type": "application/json"
+        };
+        if (token) {
+          headers["Authorization"] = `Bearer ${token}`;
+        }
+
+        try {
+          const response = await fetch("/graphql", {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ query, variables })
+          });
+          const data = await response.json();
+          $("response").textContent = JSON.stringify(data, null, 2);
+          status.textContent = response.ok ? "✅ OK" : "⚠️ Error HTTP " + response.status;
+        } catch (error) {
+          $("response").textContent = "❌ Error de red: " + error;
+          status.textContent = "";
+        }
+      });
+    </script>
+  </body>
+</html>
+""";
+
+    context.Response.ContentType = "text/html";
+    await context.Response.WriteAsync(html);
+});
 
 // Ensure database is created
 using (var scope = app.Services.CreateScope())

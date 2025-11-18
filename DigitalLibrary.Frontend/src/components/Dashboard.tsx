@@ -5,6 +5,7 @@ import { bookService } from '../services/api';
 import BookCard from './BookCard';
 import BookForm from './BookForm';
 import AccountSettings from './AccountSettings';
+import GraphQLSandbox from './GraphQLSandbox';
 
 const Dashboard: React.FC = () => {
   const { user, logout } = useAuth();
@@ -450,6 +451,10 @@ const Dashboard: React.FC = () => {
           </div>
         )}
       </main>
+
+      <section style={{ maxWidth: '1200px', margin: '0 auto', padding: '0 20px 60px' }}>
+        <GraphQLSandbox />
+      </section>
 
       {/* Book Form Modal */}
       {showForm && (

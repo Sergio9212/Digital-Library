@@ -16,6 +16,17 @@ export interface Book {
   userId: number;
 }
 
+export interface GraphQLBook {
+  id: string;
+  title: string;
+  author: string;
+  year: number;
+  coverImageUrl?: string;
+  rating: number;
+  review?: string;
+  userId: number;
+}
+
 export interface LoginRequest {
   email: string;
   password: string;

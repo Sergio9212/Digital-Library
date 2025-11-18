@@ -26,10 +26,14 @@ services:
     depends_on:
       sqlserver:
         condition: service_healthy
+      mongodb:
+        condition: service_started
     ports:
       - "5000:8080"
     environment:
       - ConnectionStrings__DefaultConnection=Server=sqlserver;Database=DigitalLibraryDb;User Id=sa;Password=YourPassword123!;TrustServerCertificate=True;
+      - MongoSettings__ConnectionString=mongodb://digitallibrary:digitallibrary@mongodb:27017
+      - MongoSettings__DatabaseName=DigitalLibraryGraphQL
     networks:
       - app_network
 
@@ -41,6 +45,39 @@ services:
       - webapi
     environment:
       - VITE_API_URL=http://localhost:5000
+      - VITE_GRAPHQL_URL=http://localhost:5000/graphql
+    networks:
+      - app_network
+
+  mongodb:
+    image: mongo:7.0
+    container_name: mongodb
+    restart: unless-stopped
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=digitallibrary
+      - MONGO_INITDB_ROOT_PASSWORD=digitallibrary
+      - MONGO_INITDB_DATABASE=DigitalLibraryGraphQL
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - app_network
+
+  mongo-express:
+    image: mongo-express:1.0.0-alpha.4
+    container_name: mongoexpress
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      - ME_CONFIG_MONGODB_ADMINUSERNAME=digitallibrary
+      - ME_CONFIG_MONGODB_ADMINPASSWORD=digitallibrary
+      - ME_CONFIG_MONGODB_SERVER=mongodb
+      - ME_CONFIG_BASICAUTH_USERNAME=admin
+      - ME_CONFIG_BASICAUTH_PASSWORD=admin
+    depends_on:
+      - mongodb
     networks:
       - app_network
 
@@ -49,3 +86,4 @@ networks:
 
 volumes:
   sql_data:
+  mongo_data:
